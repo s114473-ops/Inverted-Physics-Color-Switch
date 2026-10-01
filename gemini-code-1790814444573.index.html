@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>重力與色彩反轉 - Gravity & Color Shift</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            background-color: #121212;
+            color: #ffffff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        h1 {
+            margin-bottom: 10px;
+            color: #00adb5;
+        }
+        #game-container {
+            position: relative;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8);
+            border-radius: 8px;
+            overflow: hidden;
+            border: 2px solid #393e46;
+        }
+        canvas {
+            background-color: #222831;
+            display: block;
+        }
+        .instructions {
+            margin-top: 20px;
+            max-width: 800px;
+            background: #393e46;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 5px solid #00adb5;
+            line-height: 1.6;
+        }
+        .instructions h3 {
+            color: #00adb5;
+            margin-bottom: 10px;
+        }
+        .key-badge {
+            background: #222831;
+            padding: 2px 8px;
+            border-radius: 4px;
+            border: 1px solid #00adb5;
+            color: #00adb5;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>重力與色彩反轉 (Gravity & Color Shift)</h1>
+    
+    <div id="game-container">
+        <canvas id="gameCanvas" width="800" height="400"></canvas>
+    </div>
+
+    <div class="instructions">
+        <h3>🎮 非傳統玩法：操作方式說明</h3>
+        <ul>
+            <li><strong>【切換重力】：</strong> 按下 <span class="key-badge">空白鍵 Space</span> 或 <span class="key-badge">點擊螢幕左半區</span>。角色會立即在天花板與地板之間翻轉切換（無跳躍功能）。</li>
+            <li><strong>【切換色彩】：</strong> 按下 <span class="key-badge">Shift 鍵</span> 或 <span class="key-badge">點擊螢幕右半區</span>。切換角色的黑/白顏色。</li>
+            <li><strong>【特殊遊戲機制】：</strong> 
+                <ul>
+                    <li>障礙物有「黑色」與「白色」兩種。</li>
+                    <li>當角色與障礙物<strong>【顏色相同】</strong>時：可以安全直接穿過！</li>
+                    <li>當角色與障礙物<strong>【顏色不同】</strong>時：發生碰撞，遊戲結束！</li>
+                </ul>
+            </li>
+            <li><strong>【遊戲目標】：</strong> 同時運用「重力翻轉」避開位置，與「色彩切換」吸收同色障礙，挑戰極限最高分！</li>
+        </ul>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        let gameState = 'START'; // 'START', 'PLAYING', 'GAMEOVER'
+        let score = 0;
+        let highScore = 0;
+        let gameSpeed = 6;
+        let frameCount = 0;
+
+        // 角色物件
+        const player = {
+            x: 100,
+            y: 320,
+            width: 36,
+            height: 36,
+            colorState: 'WHITE', // 'WHITE' or 'BLACK'
+            gravityDir: 1, // 1: 向下, -1: 向上
+            velocityY: 0,
+            speedY: 12,
+            
+            draw() {
+                // 外框發光
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = this.colorState === 'WHITE' ? '#ffffff' : '#00adb5';
+                
+                ctx.fillStyle = this.colorState === 'WHITE' ? '#ffffff' : '#121212';
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+                
+                // 畫邊框方便辨識
+                ctx.strokeStyle = '#00adb5';
+                ctx.lineWidth = 3;
+                ctx.strokeRect(this.x, this.y, this.width, this.height);
+
+                ctx.shadowBlur = 0; // 重置發光
+            },
+
+            switchGravity() {
+                this.gravityDir *= -1;
+            },
+
+            switchColor() {
+                this.colorState = this.colorState === 'WHITE' ? 'BLACK' : 'WHITE';
+            },
+
+            update() {
+                // 移動重力
+                this.y += this.speedY * this.gravityDir;
+
+                // 邊界限制（天花板與地板）
+                const topY = 40;
+                const bottomY = canvas.height - 40 - this.height;
+
+                if (this.y < topY) this.y = topY;
+                if (this.y > bottomY) this.y = bottomY;
+            }
+        };
+
+        // 障礙物
+        let obstacles = [];
+
+        class Obstacle {
+            constructor() {
+                this.width = 30;
+                this.height = Math.random() * 80 + 60; // 長條狀障礙
+                this.x = canvas.width;
+                // 隨機在頂部或底部生成
+                this.isTop = Math.random() < 0.5;
+                this.y = this.isTop ? 40 : canvas.height - 40 - this.height;
+                // 隨機黑或白
+                this.colorState = Math.random() < 0.5 ? 'WHITE' : 'BLACK';
+            }
+
+            draw() {
+                ctx.fillStyle = this.colorState === 'WHITE' ? '#ffffff' : '#121212';
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+                
+                ctx.strokeStyle = '#eeeeee';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(this.x, this.y, this.width, this.height);
+            }
+
+            update() {
+                this.x -= gameSpeed;
+            }
+        }
+
+        function resetGame() {
+            player.y = canvas.height - 40 - player.height;
+            player.gravityDir = 1;
+            player.colorState = 'WHITE';
+            obstacles = [];
+            score = 0;
+            gameSpeed = 6;
+            frameCount = 0;
+        }
+
+        function handleObstacles() {
+            if (frameCount % Math.max(35, Math.floor(80 - gameSpeed * 2)) === 0) {
+                obstacles.push(new Obstacle());
+            }
+
+            for (let i = obstacles.length - 1; i >= 0; i--) {
+                obstacles[i].update();
+                obstacles[i].draw();
+
+                // 碰撞檢測
+                if (
+                    player.x < obstacles[i].x + obstacles[i].width &&
+                    player.x + player.width > obstacles[i].x &&
+                    player.y < obstacles[i].y + obstacles[i].height &&
+                    player.y + player.height > obstacles[i].y
+                ) {
+                    // 異色發生碰撞，同色直接穿透（安全）
+                    if (player.colorState !== obstacles[i].colorState) {
+                        gameState = 'GAMEOVER';
+                        if (score > highScore) highScore = Math.floor(score);
+                    }
+                }
+
+                if (obstacles[i].x + obstacles[i].width < 0) {
+                    obstacles.splice(i, 1);
+                }
+            }
+        }
+
+        function drawEnvironment() {
+            // 天花板與地板軌道
+            ctx.fillStyle = '#00adb5';
+            ctx.fillRect(0, 0, canvas.width, 40);
+            ctx.fillRect(0, canvas.height - 40, canvas.width, 40);
+
+            ctx.fillStyle = '#393e46';
+            ctx.font = '14px sans-serif';
+            ctx.fillText('▲ 天花板軌道', 10, 25);
+            ctx.fillText('▼ 地板軌道', 10, canvas.height - 15);
+        }
+
+        function drawUI() {
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 20px sans-serif';
+            ctx.fillText(`SCORE: ${Math.floor(score)}`, 20, 70);
+            ctx.fillText(`HIGH: ${highScore}`, canvas.width - 150, 70);
+
+            if (gameState === 'START') {
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                ctx.fillStyle = '#00adb5';
+                ctx.font = 'bold 32px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('重力與色彩反轉', canvas.width / 2, canvas.height / 2 - 40);
+                
+                ctx.fillStyle = '#fff';
+                ctx.font = '18px sans-serif';
+                ctx.fillText('[Space]: 切換重力   [Shift]: 切換色彩 (同色穿透/異色撞擊)', canvas.width / 2, canvas.height / 2 + 10);
+                ctx.fillText('按下任意控制鍵開始遊戲', canvas.width / 2, canvas.height / 2 + 60);
+                ctx.textAlign = 'left';
+            } else if (gameState === 'GAMEOVER') {
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                ctx.fillStyle = '#ff2e63';
+                ctx.font = 'bold 40px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('GAME OVER', canvas.width / 2, canvas.height / 2 - 30);
+                
+                ctx.fillStyle = '#fff';
+                ctx.font = '22px sans-serif';
+                ctx.fillText(`最終得分: ${Math.floor(score)}`, canvas.width / 2, canvas.height / 2 + 20);
+                ctx.fillText('按下 Space / Shift 重新開始', canvas.width / 2, canvas.height / 2 + 70);
+                ctx.textAlign = 'left';
+            }
+        }
+
+        function gameLoop() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            drawEnvironment();
+
+            if (gameState === 'PLAYING') {
+                frameCount++;
+                score += 0.1;
+                gameSpeed += 0.0015;
+
+                player.update();
+                player.draw();
+                handleObstacles();
+            } else {
+                player.draw();
+            }
+
+            drawUI();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // 鍵盤控制
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'Space') {
+                e.preventDefault();
+                if (gameState === 'PLAYING') player.switchGravity();
+                else { resetGame(); gameState = 'PLAYING'; }
+            } else if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
+                e.preventDefault();
+                if (gameState === 'PLAYING') player.switchColor();
+                else { resetGame(); gameState = 'PLAYING'; }
+            }
+        });
+
+        // 觸控 / 滑鼠點擊（左半區換重力，右半區換顏色）
+        canvas.addEventListener('pointerdown', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+
+            if (gameState === 'PLAYING') {
+                if (clickX < canvas.width / 2) {
+                    player.switchGravity();
+                } else {
+                    player.switchColor();
+                }
+            } else {
+                resetGame();
+                gameState = 'PLAYING';
+            }
+        });
+
+        gameLoop();
+    </script>
+</body>
+</html>
